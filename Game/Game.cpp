@@ -216,7 +216,6 @@
 //	return 0;
 //}  
 #pragma endregion
-
 #pragma region NewCodeCar
 
 //#include <GL/glut.h>
@@ -585,7 +584,6 @@
 
 
 #pragma endregion
-
 #pragma region Brick Breake
 //#include <GL/glut.h>
 //#include <vector>
@@ -990,7 +988,6 @@
 //}
 
 #pragma endregion
-
 #pragma region space invaders
 //#include <GL/glut.h>
 //#include <vector>
@@ -1540,332 +1537,620 @@
 //}
 #pragma endregion
 #pragma region  space invaders more simple
-#include <GL/glut.h>
-#include <vector>
-#include <cstdlib>
-#include <ctime>
-#include <string>
-
-// ================================================================
-//  إعدادات النافذة
-// ================================================================
-const int W = 800, H = 600;
-
-// ================================================================
-//  متغيرات اللاعب
-// ================================================================
-float playerX = W / 2.0f;
-float playerY = H - 50.0f;
-int   lives = 3;
-int   score = 0;
-bool  gameOver = false;
-bool  keyLeft = false;
-bool  keyRight = false;
-int   shootCD = 0;  // cooldown الرصاص
-
-// ================================================================
-//  هيكل الرصاصة
-// ================================================================
-struct Bullet {
-    float x, y;
-    bool  isPlayer;
-};
-std::vector<Bullet> playerBullets;
-std::vector<Bullet> enemyBullets;
-
-// ================================================================
-//  هيكل العدو
-// ================================================================
-struct Invader {
-    float x, y;
-    bool  alive;
-};
-std::vector<Invader> invaders;
-
-float invDirX = 1.0f;  // اتجاه حركة الأعداء
-int   invTimer = 0;     // عداد حركة الأعداء
-int   enemyShoot = 0;     // عداد إطلاق نار الأعداء
-
-// ================================================================
-//  رسم مستطيل
-// ================================================================
-void drawRect(float x, float y, float w, float h,
-    float r, float g, float b) {
-    glColor3f(r, g, b);
-    glBegin(GL_QUADS);
-    glVertex2f(x - w / 2, y - h / 2);
-    glVertex2f(x + w / 2, y - h / 2);
-    glVertex2f(x + w / 2, y + h / 2);
-    glVertex2f(x - w / 2, y + h / 2);
-    glEnd();
-}
-
-// ================================================================
-//  رسم نص
-// ================================================================
-void drawText(float x, float y, const std::string& text,
-    float r = 1, float g = 1, float b = 1) {
-    glColor3f(r, g, b);
-    glRasterPos2f(x, y);
-    for (char c : text)
-        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, c);
-}
-
-// ================================================================
-//  رسم سفينة اللاعب
-// ================================================================
-void drawPlayer(float x, float y) {
-    drawRect(x, y, 44, 16, 0.3f, 0.8f, 1.0f);  // جسم
-    drawRect(x, y - 14, 12, 14, 0.3f, 0.8f, 1.0f);  // رأس
-    drawRect(x - 26, y + 4, 14, 10, 0.2f, 0.6f, 0.9f);  // جناح يسار
-    drawRect(x + 26, y + 4, 14, 10, 0.2f, 0.6f, 0.9f);  // جناح يمين
-    drawRect(x, y + 12, 12, 8, 1.0f, 0.5f, 0.0f);  // محرك
-}
-
-// ================================================================
-//  رسم العدو
-// ================================================================
-void drawInvader(float x, float y) {
-    drawRect(x, y, 36, 24, 0.2f, 0.9f, 0.3f);  // جسم
-    drawRect(x, y - 14, 16, 12, 0.2f, 0.9f, 0.3f);  // رأس
-    drawRect(x - 22, y + 8, 10, 10, 0.1f, 0.7f, 0.2f);  // رجل يسار
-    drawRect(x + 22, y + 8, 10, 10, 0.1f, 0.7f, 0.2f);  // رجل يمين
-    // عيون
-    drawRect(x - 8, y - 2, 6, 6, 0.0f, 0.0f, 0.0f);
-    drawRect(x + 8, y - 2, 6, 6, 0.0f, 0.0f, 0.0f);
-}
-
-// ================================================================
-//  إنشاء الأعداء
-// ================================================================
-void initInvaders() {
-    invaders.clear();
-    for (int row = 0; row < 4; row++) {
-        for (int col = 0; col < 10; col++) {
-            invaders.push_back({
-                80.0f + col * 68.0f,
-                80.0f + row * 55.0f,
-                true
-                });
-        }
-    }
-    invDirX = 1.0f;
-}
-
-// ================================================================
-//  دالة الرسم
-// ================================================================
-void display() {
-    glClearColor(0.02f, 0.02f, 0.1f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    // ---- الأعداء ----
-    for (auto& inv : invaders)
-        if (inv.alive)
-            drawInvader(inv.x, inv.y);
-
-    // ---- اللاعب ----
-    drawPlayer(playerX, playerY);
-
-    // ---- رصاص اللاعب (أصفر) ----
-    for (auto& b : playerBullets)
-        drawRect(b.x, b.y, 4, 14, 1.0f, 1.0f, 0.3f);
-
-    // ---- رصاص الأعداء (أحمر) ----
-    for (auto& b : enemyBullets)
-        drawRect(b.x, b.y, 4, 14, 1.0f, 0.3f, 0.3f);
-
-    // ---- خط الأرض ----
-    glColor3f(0.4f, 0.4f, 0.4f);
-    glLineWidth(2.0f);
-    glBegin(GL_LINES);
-    glVertex2f(0, H - 25);
-    glVertex2f(W, H - 25);
-    glEnd();
-
-    // ---- HUD ----
-    drawText(10, 20, "Score: " + std::to_string(score), 1, 1, 0.3f);
-    drawText(W / 2 - 40, 20, "Lives: " + std::to_string(lives), 1, 0.3f, 0.3f);
-
-    // ---- Game Over ----
-    if (gameOver) {
-        drawRect(W / 2, H / 2, 380, 180, 0, 0, 0);
-        drawText(W / 2 - 70, H / 2 - 30, "GAME OVER", 1.0f, 0.2f, 0.2f);
-        drawText(W / 2 - 90, H / 2 + 10, "Score: " + std::to_string(score), 1, 1, 0.3f);
-        drawText(W / 2 - 110, H / 2 + 50, "Press R to Restart", 0.8f, 0.8f, 0.8f);
-    }
-
-    glutSwapBuffers();
-}
-
-// ================================================================
-//  دالة التحديث
-// ================================================================
-void update(int value) {
-    if (!gameOver) {
-
-        // ---- تحريك اللاعب ----
-        if (keyLeft && playerX - 25 > 0)   playerX -= 5.0f;
-        if (keyRight && playerX + 25 < W)   playerX += 5.0f;
-
-        // ---- cooldown الرصاص ----
-        if (shootCD > 0) shootCD--;
-
-        // ---- تحريك الأعداء ----
-        invTimer++;
-        if (invTimer >= 25) {
-            invTimer = 0;
-
-            // هل وصل للحافة؟
-            bool hit = false;
-            for (auto& inv : invaders) {
-                if (!inv.alive) continue;
-                if ((invDirX > 0 && inv.x + 22 >= W - 10) ||
-                    (invDirX < 0 && inv.x - 22 <= 10)) {
-                    hit = true; break;
-                }
-            }
-
-            if (hit) {
-                invDirX = -invDirX;
-                for (auto& inv : invaders)
-                    if (inv.alive) inv.y += 25;
-            }
-            else {
-                for (auto& inv : invaders)
-                    if (inv.alive) inv.x += invDirX * 8;
-            }
-
-            // لو الأعداء وصلوا لخط اللاعب
-            for (auto& inv : invaders)
-                if (inv.alive && inv.y > H - 80)
-                    gameOver = true;
-        }
-
-        // ---- إطلاق نار الأعداء ----
-        enemyShoot++;
-        if (enemyShoot >= 60) {
-            enemyShoot = 0;
-            std::vector<int> alive;
-            for (int i = 0; i < (int)invaders.size(); i++)
-                if (invaders[i].alive) alive.push_back(i);
-            if (!alive.empty()) {
-                int idx = alive[rand() % alive.size()];
-                enemyBullets.push_back({ invaders[idx].x, invaders[idx].y + 15 });
-            }
-        }
-
-        // ---- تحريك رصاص اللاعب ----
-        for (auto& b : playerBullets) b.y -= 10.0f;
-        playerBullets.erase(
-            std::remove_if(playerBullets.begin(), playerBullets.end(),
-                [](const Bullet& b) { return b.y < 0; }),
-            playerBullets.end());
-
-        // ---- تحريك رصاص الأعداء ----
-        for (auto& b : enemyBullets) b.y += 6.0f;
-        enemyBullets.erase(
-            std::remove_if(enemyBullets.begin(), enemyBullets.end(),
-                [](const Bullet& b) { return b.y > H; }),
-            enemyBullets.end());
-
-        // ---- رصاص اللاعب يضرب عدو ----
-        for (auto& bullet : playerBullets) {
-            for (auto& inv : invaders) {
-                if (!inv.alive) continue;
-                if (fabsf(bullet.x - inv.x) < 20 &&
-                    fabsf(bullet.y - inv.y) < 18) {
-                    inv.alive = false;
-                    bullet.y = -100;   // احذف الرصاصة
-                    score += 10;
-                }
-            }
-        }
-
-        // ---- رصاص الأعداء يضرب اللاعب ----
-        for (auto& bullet : enemyBullets) {
-            if (fabsf(bullet.x - playerX) < 22 &&
-                fabsf(bullet.y - playerY) < 20) {
-                bullet.y = H + 100;   // احذف الرصاصة
-                lives--;
-                if (lives <= 0) gameOver = true;
-            }
-        }
-
-        // ---- هل كل الأعداء اتقتلوا؟ ----
-        bool allDead = true;
-        for (auto& inv : invaders)
-            if (inv.alive) { allDead = false; break; }
-        if (allDead) {
-            initInvaders();
-            score += 100;
-        }
-    }
-
-    glutPostRedisplay();
-    glutTimerFunc(16, update, 0);
-}
-
-// ================================================================
-//  Keyboard
-// ================================================================
-void keyboard(unsigned char key, int x, int y) {
-    if (key == ' ' && !gameOver && shootCD == 0) {
-        playerBullets.push_back({ playerX, playerY - 25 });
-        shootCD = 15;
-    }
-    if ((key == 'r' || key == 'R') && gameOver) {
-        score = 0;
-        lives = 3;
-        gameOver = false;
-        playerX = W / 2.0f;
-        playerBullets.clear();
-        enemyBullets.clear();
-        initInvaders();
-    }
-    if (key == 27) exit(0);
-}
-
-void specialKeys(int key, int x, int y) {
-    if (key == GLUT_KEY_LEFT)  keyLeft = true;
-    if (key == GLUT_KEY_RIGHT) keyRight = true;
-}
-
-void specialKeysUp(int key, int x, int y) {
-    if (key == GLUT_KEY_LEFT)  keyLeft = false;
-    if (key == GLUT_KEY_RIGHT) keyRight = false;
-}
-
-// ================================================================
-//  Main
-// ================================================================
-int main(int argc, char** argv) {
-    srand((unsigned)time(0));
-
-    glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
-    glutInitWindowSize(W, H);
-    glutInitWindowPosition(300, 100);
-    glutCreateWindow("Space Invaders - OpenGL");
-
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(0, W, H, 0, -1, 1);
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-
-    initInvaders();
-
-    glutDisplayFunc(display);
-    glutTimerFunc(16, update, 0);
-    glutKeyboardFunc(keyboard);
-    glutSpecialFunc(specialKeys);
-    glutSpecialUpFunc(specialKeysUp);
-
-    glutMainLoop();
-    return 0;
-}
+//#include <GL/glut.h>
+//#include <vector>
+//#include <cstdlib>
+//#include <ctime>
+//#include <string>
+//
+//// ================================================================
+////  إعدادات النافذة
+//// ================================================================
+//const int W = 800, H = 600;
+//
+//// ================================================================
+////  متغيرات اللاعب
+//// ================================================================
+//float playerX = W / 2.0f;
+//float playerY = H - 50.0f;
+//int   lives = 3;
+//int   score = 0;
+//bool  gameOver = false;
+//bool  keyLeft = false;
+//bool  keyRight = false;
+//int   shootCD = 0;  // cooldown الرصاص
+//
+//// ================================================================
+////  هيكل الرصاصة
+//// ================================================================
+//struct Bullet {
+//    float x, y;
+//    bool  isPlayer;
+//};
+//std::vector<Bullet> playerBullets;
+//std::vector<Bullet> enemyBullets;
+//
+//// ================================================================
+////  هيكل العدو
+//// ================================================================
+//struct Invader {
+//    float x, y;
+//    bool  alive;
+//};
+//std::vector<Invader> invaders;
+//
+//float invDirX = 1.0f;  // اتجاه حركة الأعداء
+//int   invTimer = 0;     // عداد حركة الأعداء
+//int   enemyShoot = 0;     // عداد إطلاق نار الأعداء
+//
+//// ================================================================
+////  رسم مستطيل
+//// ================================================================
+//void drawRect(float x, float y, float w, float h,
+//    float r, float g, float b) {
+//    glColor3f(r, g, b);
+//    glBegin(GL_QUADS);
+//    glVertex2f(x - w / 2, y - h / 2);
+//    glVertex2f(x + w / 2, y - h / 2);
+//    glVertex2f(x + w / 2, y + h / 2);
+//    glVertex2f(x - w / 2, y + h / 2);
+//    glEnd();
+//}
+//
+//// ================================================================
+////  رسم نص
+//// ================================================================
+//void drawText(float x, float y, const std::string& text,
+//    float r = 1, float g = 1, float b = 1) {
+//    glColor3f(r, g, b);
+//    glRasterPos2f(x, y);
+//    for (char c : text)
+//        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, c);
+//}
+//
+//// ================================================================
+////  رسم سفينة اللاعب
+//// ================================================================
+//void drawPlayer(float x, float y) {
+//    drawRect(x, y, 44, 16, 0.3f, 0.8f, 1.0f);  // جسم
+//    drawRect(x, y - 14, 12, 14, 0.3f, 0.8f, 1.0f);  // رأس
+//    drawRect(x - 26, y + 4, 14, 10, 0.2f, 0.6f, 0.9f);  // جناح يسار
+//    drawRect(x + 26, y + 4, 14, 10, 0.2f, 0.6f, 0.9f);  // جناح يمين
+//    drawRect(x, y + 12, 12, 8, 1.0f, 0.5f, 0.0f);  // محرك
+//}
+//
+//// ================================================================
+////  رسم العدو
+//// ================================================================
+//void drawInvader(float x, float y) {
+//    drawRect(x, y, 36, 24, 0.2f, 0.9f, 0.3f);  // جسم
+//    drawRect(x, y - 14, 16, 12, 0.2f, 0.9f, 0.3f);  // رأس
+//    drawRect(x - 22, y + 8, 10, 10, 0.1f, 0.7f, 0.2f);  // رجل يسار
+//    drawRect(x + 22, y + 8, 10, 10, 0.1f, 0.7f, 0.2f);  // رجل يمين
+//    // عيون
+//    drawRect(x - 8, y - 2, 6, 6, 0.0f, 0.0f, 0.0f);
+//    drawRect(x + 8, y - 2, 6, 6, 0.0f, 0.0f, 0.0f);
+//}
+//
+//// ================================================================
+////  إنشاء الأعداء
+//// ================================================================
+//void initInvaders() {
+//    invaders.clear();
+//    for (int row = 0; row < 4; row++) {
+//        for (int col = 0; col < 10; col++) {
+//            invaders.push_back({
+//                80.0f + col * 68.0f,
+//                80.0f + row * 55.0f,
+//                true
+//                });
+//        }
+//    }
+//    invDirX = 1.0f;
+//}
+//
+//// ================================================================
+////  دالة الرسم
+//// ================================================================
+//void display() {
+//    glClearColor(0.02f, 0.02f, 0.1f, 1.0f);
+//    glClear(GL_COLOR_BUFFER_BIT);
+//
+//    // ---- الأعداء ----
+//    for (auto& inv : invaders)
+//        if (inv.alive)
+//            drawInvader(inv.x, inv.y);
+//
+//    // ---- اللاعب ----
+//    drawPlayer(playerX, playerY);
+//
+//    // ---- رصاص اللاعب (أصفر) ----
+//    for (auto& b : playerBullets)
+//        drawRect(b.x, b.y, 4, 14, 1.0f, 1.0f, 0.3f);
+//
+//    // ---- رصاص الأعداء (أحمر) ----
+//    for (auto& b : enemyBullets)
+//        drawRect(b.x, b.y, 4, 14, 1.0f, 0.3f, 0.3f);
+//
+//    // ---- خط الأرض ----
+//    glColor3f(0.4f, 0.4f, 0.4f);
+//    glLineWidth(2.0f);
+//    glBegin(GL_LINES);
+//    glVertex2f(0, H - 25);
+//    glVertex2f(W, H - 25);
+//    glEnd();
+//
+//    // ---- HUD ----
+//    drawText(10, 20, "Score: " + std::to_string(score), 1, 1, 0.3f);
+//    drawText(W / 2 - 40, 20, "Lives: " + std::to_string(lives), 1, 0.3f, 0.3f);
+//
+//    // ---- Game Over ----
+//    if (gameOver) {
+//        drawRect(W / 2, H / 2, 380, 180, 0, 0, 0);
+//        drawText(W / 2 - 70, H / 2 - 30, "GAME OVER", 1.0f, 0.2f, 0.2f);
+//        drawText(W / 2 - 90, H / 2 + 10, "Score: " + std::to_string(score), 1, 1, 0.3f);
+//        drawText(W / 2 - 110, H / 2 + 50, "Press R to Restart", 0.8f, 0.8f, 0.8f);
+//    }
+//
+//    glutSwapBuffers();
+//}
+//
+//// ================================================================
+////  دالة التحديث
+//// ================================================================
+//void update(int value) {
+//    if (!gameOver) {
+//
+//        // ---- تحريك اللاعب ----
+//        if (keyLeft && playerX - 25 > 0)   playerX -= 5.0f;
+//        if (keyRight && playerX + 25 < W)   playerX += 5.0f;
+//
+//        // ---- cooldown الرصاص ----
+//        if (shootCD > 0) shootCD--;
+//
+//        // ---- تحريك الأعداء ----
+//        invTimer++;
+//        if (invTimer >= 25) {
+//            invTimer = 0;
+//
+//            // هل وصل للحافة؟
+//            bool hit = false;
+//            for (auto& inv : invaders) {
+//                if (!inv.alive) continue;
+//                if ((invDirX > 0 && inv.x + 22 >= W - 10) ||
+//                    (invDirX < 0 && inv.x - 22 <= 10)) {
+//                    hit = true; break;
+//                }
+//            }
+//
+//            if (hit) {
+//                invDirX = -invDirX;
+//                for (auto& inv : invaders)
+//                    if (inv.alive) inv.y += 25;
+//            }
+//            else {
+//                for (auto& inv : invaders)
+//                    if (inv.alive) inv.x += invDirX * 8;
+//            }
+//
+//            // لو الأعداء وصلوا لخط اللاعب
+//            for (auto& inv : invaders)
+//                if (inv.alive && inv.y > H - 80)
+//                    gameOver = true;
+//        }
+//
+//        // ---- إطلاق نار الأعداء ----
+//        enemyShoot++;
+//        if (enemyShoot >= 60) {
+//            enemyShoot = 0;
+//            std::vector<int> alive;
+//            for (int i = 0; i < (int)invaders.size(); i++)
+//                if (invaders[i].alive) alive.push_back(i);
+//            if (!alive.empty()) {
+//                int idx = alive[rand() % alive.size()];
+//                enemyBullets.push_back({ invaders[idx].x, invaders[idx].y + 15 });
+//            }
+//        }
+//
+//        // ---- تحريك رصاص اللاعب ----
+//        for (auto& b : playerBullets) b.y -= 10.0f;
+//        playerBullets.erase(
+//            std::remove_if(playerBullets.begin(), playerBullets.end(),
+//                [](const Bullet& b) { return b.y < 0; }),
+//            playerBullets.end());
+//
+//        // ---- تحريك رصاص الأعداء ----
+//        for (auto& b : enemyBullets) b.y += 6.0f;
+//        enemyBullets.erase(
+//            std::remove_if(enemyBullets.begin(), enemyBullets.end(),
+//                [](const Bullet& b) { return b.y > H; }),
+//            enemyBullets.end());
+//
+//        // ---- رصاص اللاعب يضرب عدو ----
+//        for (auto& bullet : playerBullets) {
+//            for (auto& inv : invaders) {
+//                if (!inv.alive) continue;
+//                if (fabsf(bullet.x - inv.x) < 20 &&
+//                    fabsf(bullet.y - inv.y) < 18) {
+//                    inv.alive = false;
+//                    bullet.y = -100;   // احذف الرصاصة
+//                    score += 10;
+//                }
+//            }
+//        }
+//
+//        // ---- رصاص الأعداء يضرب اللاعب ----
+//        for (auto& bullet : enemyBullets) {
+//            if (fabsf(bullet.x - playerX) < 22 &&
+//                fabsf(bullet.y - playerY) < 20) {
+//                bullet.y = H + 100;   // احذف الرصاصة
+//                lives--;
+//                if (lives <= 0) gameOver = true;
+//            }
+//        }
+//
+//        // ---- هل كل الأعداء اتقتلوا؟ ----
+//        bool allDead = true;
+//        for (auto& inv : invaders)
+//            if (inv.alive) { allDead = false; break; }
+//        if (allDead) {
+//            initInvaders();
+//            score += 100;
+//        }
+//    }
+//
+//    glutPostRedisplay();
+//    glutTimerFunc(16, update, 0);
+//}
+//
+//// ================================================================
+////  Keyboard
+//// ================================================================
+//void keyboard(unsigned char key, int x, int y) {
+//    if (key == ' ' && !gameOver && shootCD == 0) {
+//        playerBullets.push_back({ playerX, playerY - 25 });
+//        shootCD = 15;
+//    }
+//    if ((key == 'r' || key == 'R') && gameOver) {
+//        score = 0;
+//        lives = 3;
+//        gameOver = false;
+//        playerX = W / 2.0f;
+//        playerBullets.clear();
+//        enemyBullets.clear();
+//        initInvaders();
+//    }
+//    if (key == 27) exit(0);
+//}
+//
+//void specialKeys(int key, int x, int y) {
+//    if (key == GLUT_KEY_LEFT)  keyLeft = true;
+//    if (key == GLUT_KEY_RIGHT) keyRight = true;
+//}
+//
+//void specialKeysUp(int key, int x, int y) {
+//    if (key == GLUT_KEY_LEFT)  keyLeft = false;
+//    if (key == GLUT_KEY_RIGHT) keyRight = false;
+//}
+//
+//// ================================================================
+////  Main
+//// ================================================================
+//int main(int argc, char** argv) {
+//    srand((unsigned)time(0));
+//
+//    glutInit(&argc, argv);
+//    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
+//    glutInitWindowSize(W, H);
+//    glutInitWindowPosition(300, 100);
+//    glutCreateWindow("Space Invaders - OpenGL");
+//
+//    glMatrixMode(GL_PROJECTION);
+//    glLoadIdentity();
+//    glOrtho(0, W, H, 0, -1, 1);
+//    glMatrixMode(GL_MODELVIEW);
+//    glLoadIdentity();
+//
+//    initInvaders();
+//
+//    glutDisplayFunc(display);
+//    glutTimerFunc(16, update, 0);
+//    glutKeyboardFunc(keyboard);
+//    glutSpecialFunc(specialKeys);
+//    glutSpecialUpFunc(specialKeysUp);
+//
+//    glutMainLoop();
+//    return 0;
+//}
 #pragma endregion
+#pragma region pong
+//#include <GL/glut.h>
+//#include <string>
+//#include <cmath>
+//#include <ctime>
+//
+//// ================================================================
+////  إعدادات النافذة
+//// ================================================================
+//const int W = 800, H = 600;
+//
+//// ================================================================
+////  متغيرات المضاربين
+//// ================================================================
+//float p1Y = H / 2.0f;   // مضرب اللاعب 1 (يسار)
+//float p2Y = H / 2.0f;   // مضرب اللاعب 2 (يمين)
+//float padW = 15.0f;      // عرض المضرب
+//float padH = 90.0f;      // طول المضرب
+//float padSpd = 6.0f;      // سرعة المضرب
+//
+//// ================================================================
+////  متغيرات الكورة
+//// ================================================================
+//float ballX = W / 2.0f;
+//float ballY = H / 2.0f;
+//float ballR = 10.0f;
+//float ballVX = 5.0f;
+//float ballVY = 4.0f;
+//
+//// ================================================================
+////  النقاط
+//// ================================================================
+//int score1 = 0;   // نقاط اللاعب 1
+//int score2 = 0;   // نقاط اللاعب 2
+//int maxScore = 7;  // أول واحد يوصل 7 يكسب
+//bool gameOver = false;
+//int winner = 0;
+//
+//// ================================================================
+////  الكيبورد
+//// ================================================================
+//bool w_key = false;   // اللاعب 1 فوق
+//bool s_key = false;   // اللاعب 1 تحت
+//bool up_key = false;   // اللاعب 2 فوق
+//bool dn_key = false;   // اللاعب 2 تحت
+//
+//// ================================================================
+////  إعادة تعيين الكورة
+//// ================================================================
+//void resetBall() {
+//    ballX = W / 2.0f;
+//    ballY = H / 2.0f;
+//    ballVX = (rand() % 2 == 0) ? 5.0f : -5.0f;
+//    ballVY = (rand() % 2 == 0) ? 4.0f : -4.0f;
+//}
+//
+//// ================================================================
+////  رسم مستطيل
+//// ================================================================
+//void drawRect(float x, float y, float w, float h,
+//    float r, float g, float b) {
+//    glColor3f(r, g, b);
+//    glBegin(GL_QUADS);
+//    glVertex2f(x - w / 2, y - h / 2);
+//    glVertex2f(x + w / 2, y - h / 2);
+//    glVertex2f(x + w / 2, y + h / 2);
+//    glVertex2f(x - w / 2, y + h / 2);
+//    glEnd();
+//}
+//
+//// ================================================================
+////  رسم دائرة (الكورة)
+//// ================================================================
+//void drawCircle(float cx, float cy, float r,
+//    float cr, float cg, float cb) {
+//    glColor3f(cr, cg, cb);
+//    glBegin(GL_TRIANGLE_FAN);
+//    glVertex2f(cx, cy);
+//    for (int i = 0; i <= 32; i++) {
+//        float a = 2.0f * 3.14159f * i / 32;
+//        glVertex2f(cx + r * cosf(a), cy + r * sinf(a));
+//    }
+//    glEnd();
+//}
+//
+//// ================================================================
+////  رسم نص
+//// ================================================================
+//void drawText(float x, float y, const std::string& text,
+//    float r = 1, float g = 1, float b = 1) {
+//    glColor3f(r, g, b);
+//    glRasterPos2f(x, y);
+//    for (char c : text)
+//        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, c);
+//}
+//
+//// ================================================================
+////  دالة الرسم
+//// ================================================================
+//void display() {
+//    glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
+//    glClear(GL_COLOR_BUFFER_BIT);
+//
+//    // ---- خط النص في المنتصف ----
+//    glColor3f(0.3f, 0.3f, 0.3f);
+//    glLineWidth(2.0f);
+//    glLineStipple(2, 0xAAAA);
+//    glEnable(GL_LINE_STIPPLE);
+//    glBegin(GL_LINES);
+//    glVertex2f(W / 2.0f, 0);
+//    glVertex2f(W / 2.0f, H);
+//    glEnd();
+//    glDisable(GL_LINE_STIPPLE);
+//
+//    // ---- المضاربين ----
+//    drawRect(20, p1Y, padW, padH, 0.3f, 0.7f, 1.0f);  // اللاعب 1
+//    drawRect(W - 20, p2Y, padW, padH, 1.0f, 0.4f, 0.4f);  // اللاعب 2
+//
+//    // ---- الكورة ----
+//    drawCircle(ballX, ballY, ballR, 1.0f, 1.0f, 1.0f);
+//
+//    // ---- النقاط ----
+//    drawText(W / 2 - 80, 40, std::to_string(score1), 0.3f, 0.7f, 1.0f);
+//    drawText(W / 2 + 55, 40, std::to_string(score2), 1.0f, 0.4f, 0.4f);
+//
+//    // ---- أسماء اللاعبين ----
+//    drawText(10, 580, "P1: W/S", 0.3f, 0.7f, 1.0f);
+//    drawText(W - 100, 580, "P2: UP/DN", 1.0f, 0.4f, 0.4f);
+//
+//    // ---- Game Over ----
+//    if (gameOver) {
+//        drawRect(W / 2, H / 2, 400, 200, 0.05f, 0.05f, 0.05f);
+//
+//        if (winner == 1)
+//            drawText(W / 2 - 80, H / 2 - 30, "Player 1 Wins!", 0.3f, 0.7f, 1.0f);
+//        else
+//            drawText(W / 2 - 80, H / 2 - 30, "Player 2 Wins!", 1.0f, 0.4f, 0.4f);
+//
+//        drawText(W / 2 - 110, H / 2 + 20,
+//            std::to_string(score1) + "  -  " + std::to_string(score2),
+//            1.0f, 1.0f, 1.0f);
+//        drawText(W / 2 - 110, H / 2 + 60, "Press R to Restart", 0.8f, 0.8f, 0.8f);
+//    }
+//
+//    glutSwapBuffers();
+//}
+//
+//// ================================================================
+////  دالة التحديث
+//// ================================================================
+//void update(int value) {
+//    if (!gameOver) {
+//
+//        // ---- تحريك المضاربين ----
+//        if (w_key && p1Y - padH / 2 > 0)   p1Y -= padSpd;
+//        if (s_key && p1Y + padH / 2 < H)   p1Y += padSpd;
+//        if (up_key && p2Y - padH / 2 > 0)   p2Y -= padSpd;
+//        if (dn_key && p2Y + padH / 2 < H)   p2Y += padSpd;
+//
+//        // ---- تحريك الكورة ----
+//        ballX += ballVX;
+//        ballY += ballVY;
+//
+//        // ---- ارتداد من السقف والأرض ----
+//        if (ballY - ballR < 0) {
+//            ballY = ballR;
+//            ballVY = fabsf(ballVY);
+//        }
+//        if (ballY + ballR > H) {
+//            ballY = H - ballR;
+//            ballVY = -fabsf(ballVY);
+//        }
+//
+//        // ---- ارتداد من مضرب اللاعب 1 ----
+//        if (ballX - ballR < 20 + padW / 2 &&
+//            ballX - ballR > 20 - padW / 2 &&
+//            ballY > p1Y - padH / 2 &&
+//            ballY < p1Y + padH / 2 &&
+//            ballVX < 0)
+//        {
+//            // زاوية الارتداد حسب مكان الضربة
+//            float hit = (ballY - p1Y) / (padH / 2.0f);
+//            ballVX = fabsf(ballVX) * 1.05f;  // تسريع بسيط
+//            ballVY = hit * 6.0f;
+//            ballX = 20 + padW / 2 + ballR;
+//        }
+//
+//        // ---- ارتداد من مضرب اللاعب 2 ----
+//        if (ballX + ballR > W - 20 - padW / 2 &&
+//            ballX + ballR < W - 20 + padW / 2 &&
+//            ballY > p2Y - padH / 2 &&
+//            ballY < p2Y + padH / 2 &&
+//            ballVX > 0)
+//        {
+//            float hit = (ballY - p2Y) / (padH / 2.0f);
+//            ballVX = -fabsf(ballVX) * 1.05f;
+//            ballVY = hit * 6.0f;
+//            ballX = W - 20 - padW / 2 - ballR;
+//        }
+//
+//        // ---- الكورة خرجت يسار → نقطة للاعب 2 ----
+//        if (ballX + ballR < 0) {
+//            score2++;
+//            if (score2 >= maxScore) { gameOver = true; winner = 2; }
+//            else resetBall();
+//        }
+//
+//        // ---- الكورة خرجت يمين → نقطة للاعب 1 ----
+//        if (ballX - ballR > W) {
+//            score1++;
+//            if (score1 >= maxScore) { gameOver = true; winner = 1; }
+//            else resetBall();
+//        }
+//
+//        // ---- حد أقصى للسرعة ----
+//        if (fabsf(ballVX) > 15.0f)
+//            ballVX = (ballVX > 0) ? 15.0f : -15.0f;
+//    }
+//
+//    glutPostRedisplay();
+//    glutTimerFunc(16, update, 0);
+//}
+//
+//// ================================================================
+////  Keyboard
+//// ================================================================
+//void keyboard(unsigned char key, int x, int y) {
+//    if (key == 'w' || key == 'W') w_key = true;
+//    if (key == 's' || key == 'S') s_key = true;
+//
+//    if ((key == 'r' || key == 'R') && gameOver) {
+//        score1 = 0;
+//        score2 = 0;
+//        gameOver = false;
+//        winner = 0;
+//        p1Y = H / 2.0f;
+//        p2Y = H / 2.0f;
+//        resetBall();
+//    }
+//
+//    if (key == 27) exit(0);
+//}
+//
+//void keyboardUp(unsigned char key, int x, int y) {
+//    if (key == 'w' || key == 'W') w_key = false;
+//    if (key == 's' || key == 'S') s_key = false;
+//}
+//
+//void specialKeys(int key, int x, int y) {
+//    if (key == GLUT_KEY_UP)   up_key = true;
+//    if (key == GLUT_KEY_DOWN) dn_key = true;
+//}
+//
+//void specialKeysUp(int key, int x, int y) {
+//    if (key == GLUT_KEY_UP)   up_key = false;
+//    if (key == GLUT_KEY_DOWN) dn_key = false;
+//}
+//
+//// ================================================================
+////  Main
+//// ================================================================
+//int main(int argc, char** argv) {
+//    srand((unsigned int)time(NULL));
+//
+//    glutInit(&argc, argv);
+//    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
+//    glutInitWindowSize(W, H);
+//    glutInitWindowPosition(300, 100);
+//    glutCreateWindow("Pong - OpenGL");
+//
+//    glMatrixMode(GL_PROJECTION);
+//    glLoadIdentity();
+//    glOrtho(0, W, H, 0, -1, 1);
+//    glMatrixMode(GL_MODELVIEW);
+//    glLoadIdentity();
+//
+//    glutDisplayFunc(display);
+//    glutTimerFunc(16, update, 0);
+//    glutKeyboardFunc(keyboard);
+//    glutKeyboardUpFunc(keyboardUp);
+//    glutSpecialFunc(specialKeys);
+//    glutSpecialUpFunc(specialKeysUp);
+//
+//    glutMainLoop();
+//    return 0;
+//}
+#pragma endregion
+
 
 
 
