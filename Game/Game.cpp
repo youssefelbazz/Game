@@ -991,6 +991,554 @@
 
 #pragma endregion
 
+#pragma region space invaders
+#include <GL/glut.h>
+#include <vector>
+#include <cstdlib>
+#include <ctime>
+#include <string>
+#include <cmath>
+
+// ================================================================
+//  إعدادات النافذة
+// ================================================================
+const int W = 800, H = 700;
+
+// ================================================================
+//  متغيرات اللاعب
+// ================================================================
+float playerX = W / 2.0f;
+float playerY = H - 60.0f;
+float playerW = 50.0f;
+float playerH = 40.0f;
+float playerSpd = 6.0f;
+int   lives = 3;
+int   score = 0;
+int   highScore = 0;
+int   level = 1;
+bool  gameOver = false;
+bool  won = false;
+
+// ================================================================
+//  متغيرات الكيبورد
+// ================================================================
+bool keyLeft = false;
+bool keyRight = false;
+
+// ================================================================
+//  هيكل الرصاصة
+// ================================================================
+struct Bullet {
+    float x, y;
+    float vy;      // سرعة على محور Y
+    bool  alive;
+    bool  isPlayer; // رصاصة اللاعب ولا العدو؟
+};
+std::vector<Bullet> bullets;
+int shootCooldown = 0;  // عشان اللاعب ميطلقش رصاص بسرعة أوي
+
+// ================================================================
+//  هيكل العدو
+// ================================================================
+struct Invader {
+    float x, y;
+    bool  alive;
+    int   type;    // نوع العدو (0,1,2) شكل مختلف
+    float r, g, b;
+};
+std::vector<Invader> invaders;
+
+// إعدادات حركة الأعداء
+float invaderDirX = 2.0f;   // اتجاه الحركة (يمين/شمال)
+float invaderMoveY = 20.0f;  // كام بينزل لأسفل لما يوصل للحافة
+int   invaderTimer = 0;      // عداد حركة الأعداء
+int   invaderSpeed = 30;     // كل كام frame بيتحركوا
+int   enemyShootTimer = 0;    // عداد إطلاق نار الأعداء
+
+// ================================================================
+//  هيكل الحاجز (Barrier)
+// ================================================================
+struct Barrier {
+    float x, y;
+    int   health;  // كام ضربة يتحمل
+};
+std::vector<Barrier> barriers;
+
+// ================================================================
+//  ألوان الأعداء حسب الصف
+// ================================================================
+float invaderColors[3][3] = {
+    {0.9f, 0.2f, 0.2f},  // أحمر (صف فوق)
+    {0.2f, 0.9f, 0.4f},  // أخضر (صف نص)
+    {0.2f, 0.5f, 0.9f}   // أزرق (صف تحت)
+};
+
+// ================================================================
+//  رسم مستطيل
+// ================================================================
+void drawRect(float x, float y, float w, float h,
+    float r, float g, float b, float alpha = 1.0f) {
+    float left = x - w / 2.0f;
+    float right = x + w / 2.0f;
+    float top = y - h / 2.0f;
+    float bottom = y + h / 2.0f;
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(r, g, b, alpha);
+    glBegin(GL_QUADS);
+    glVertex2f(left, top);
+    glVertex2f(right, top);
+    glVertex2f(right, bottom);
+    glVertex2f(left, bottom);
+    glEnd();
+}
+
+// ================================================================
+//  رسم دائرة
+// ================================================================
+void drawCircle(float cx, float cy, float radius,
+    float r, float g, float b, int seg = 20) {
+    glColor3f(r, g, b);
+    glBegin(GL_TRIANGLE_FAN);
+    glVertex2f(cx, cy);
+    for (int i = 0; i <= seg; i++) {
+        float a = 2.0f * 3.14159f * i / seg;
+        glVertex2f(cx + radius * cosf(a), cy + radius * sinf(a));
+    }
+    glEnd();
+}
+
+// ================================================================
+//  رسم نص
+// ================================================================
+void drawText(float x, float y, const std::string& text,
+    float r = 1, float g = 1, float b = 1) {
+    glColor3f(r, g, b);
+    glRasterPos2f(x, y);
+    for (char c : text)
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, c);
+}
+
+// ================================================================
+//  رسم سفينة اللاعب
+// ================================================================
+void drawPlayer(float x, float y) {
+    // جسم السفينة
+    drawRect(x, y, playerW, playerH * 0.6f, 0.3f, 0.8f, 1.0f);
+    // رأس السفينة (فوق)
+    drawRect(x, y - playerH * 0.35f, 14, 20, 0.3f, 0.8f, 1.0f);
+    // جناح يسار
+    drawRect(x - playerW * 0.45f, y + 5, 18, 12, 0.2f, 0.6f, 0.9f);
+    // جناح يمين
+    drawRect(x + playerW * 0.45f, y + 5, 18, 12, 0.2f, 0.6f, 0.9f);
+    // محرك
+    drawRect(x, y + playerH * 0.35f, 16, 10, 1.0f, 0.5f, 0.1f);
+    // ضوء المحرك
+    drawCircle(x, y + playerH * 0.42f, 5, 1.0f, 0.8f, 0.2f);
+}
+
+// ================================================================
+//  رسم العدو حسب نوعه
+// ================================================================
+void drawInvader(float x, float y, int type, float r, float g, float b) {
+    if (type == 0) {
+        // نوع 1: شكل مثلث (صف فوق)
+        drawRect(x, y, 36, 24, r, g, b);
+        drawRect(x, y - 14, 16, 12, r, g, b);
+        drawRect(x - 20, y + 8, 10, 10, r * 0.7f, g * 0.7f, b * 0.7f);
+        drawRect(x + 20, y + 8, 10, 10, r * 0.7f, g * 0.7f, b * 0.7f);
+        // عيون
+        drawCircle(x - 8, y - 2, 4, 0.1f, 0.1f, 0.1f);
+        drawCircle(x + 8, y - 2, 4, 0.1f, 0.1f, 0.1f);
+    }
+    else if (type == 1) {
+        // نوع 2: شكل كلاسيك (صف نص)
+        drawRect(x, y, 40, 28, r, g, b);
+        drawRect(x - 22, y - 6, 10, 16, r, g, b);
+        drawRect(x + 22, y - 6, 10, 16, r, g, b);
+        drawRect(x, y + 16, 24, 8, r * 0.8f, g * 0.8f, b * 0.8f);
+        // عيون
+        drawCircle(x - 10, y - 4, 5, 0.1f, 0.1f, 0.1f);
+        drawCircle(x + 10, y - 4, 5, 0.1f, 0.1f, 0.1f);
+        // فم
+        drawRect(x, y + 6, 20, 4, 0.1f, 0.1f, 0.1f);
+    }
+    else {
+        // نوع 3: شكل دائري (صف تحت)
+        drawCircle(x, y, 20, r, g, b);
+        drawRect(x - 24, y, 10, 12, r, g, b);
+        drawRect(x + 24, y, 10, 12, r, g, b);
+        drawRect(x, y + 20, 30, 8, r * 0.7f, g * 0.7f, b * 0.7f);
+        // عيون
+        drawCircle(x - 7, y - 4, 4, 0.1f, 0.1f, 0.1f);
+        drawCircle(x + 7, y - 4, 4, 0.1f, 0.1f, 0.1f);
+    }
+}
+
+// ================================================================
+//  إنشاء الأعداء
+// ================================================================
+void initInvaders() {
+    invaders.clear();
+    int rows = 3 + (level - 1);      // صفوف بتزيد كل level
+    int cols = 10;
+    float startX = 80.0f;
+    float startY = 100.0f;
+    float spacingX = 65.0f;
+    float spacingY = 55.0f;
+
+    for (int row = 0; row < rows && row < 5; row++) {
+        for (int col = 0; col < cols; col++) {
+            Invader inv;
+            inv.x = startX + col * spacingX;
+            inv.y = startY + row * spacingY;
+            inv.alive = true;
+            inv.type = row % 3;
+            inv.r = invaderColors[row % 3][0];
+            inv.g = invaderColors[row % 3][1];
+            inv.b = invaderColors[row % 3][2];
+            invaders.push_back(inv);
+        }
+    }
+    invaderDirX = 2.0f;
+    invaderSpeed = std::max(10, 30 - level * 3);
+}
+
+// ================================================================
+//  إنشاء الحواجز
+// ================================================================
+void initBarriers() {
+    barriers.clear();
+    float bY = H - 150.0f;
+    for (int i = 0; i < 4; i++) {
+        float bX = 120.0f + i * 180.0f;
+        // كل حاجز مكون من مجموعة مستطيلات صغيرة
+        for (int bx = 0; bx < 4; bx++) {
+            for (int by = 0; by < 3; by++) {
+                Barrier b;
+                b.x = bX + bx * 14 - 21;
+                b.y = bY + by * 14 - 14;
+                b.health = 3;
+                barriers.push_back(b);
+            }
+        }
+    }
+}
+
+// ================================================================
+//  دالة الرسم
+// ================================================================
+void display() {
+    glClearColor(0.02f, 0.02f, 0.08f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // ---- نجوم في الخلفية ----
+    srand(42);  // عشان النجوم تفضل في نفس المكان
+    glColor3f(1, 1, 1);
+    glPointSize(2.0f);
+    glBegin(GL_POINTS);
+    for (int i = 0; i < 100; i++) {
+        float sx = (float)(rand() % W);
+        float sy = (float)(rand() % H);
+        glVertex2f(sx, sy);
+    }
+    glEnd();
+    srand((unsigned)time(0));
+
+    // ---- الحواجز ----
+    for (auto& b : barriers) {
+        if (b.health <= 0) continue;
+        float alpha = b.health / 3.0f;
+        drawRect(b.x, b.y, 12, 12, 0.2f, 0.8f, 0.3f, alpha);
+    }
+
+    // ---- الأعداء ----
+    for (auto& inv : invaders) {
+        if (!inv.alive) continue;
+        drawInvader(inv.x, inv.y, inv.type, inv.r, inv.g, inv.b);
+    }
+
+    // ---- اللاعب ----
+    drawPlayer(playerX, playerY);
+
+    // ---- الرصاصات ----
+    for (auto& b : bullets) {
+        if (!b.alive) continue;
+        if (b.isPlayer)
+            // رصاصة اللاعب: صفراء
+            drawRect(b.x, b.y, 4, 16, 1.0f, 1.0f, 0.3f);
+        else
+            // رصاصة العدو: حمراء
+            drawRect(b.x, b.y, 5, 14, 1.0f, 0.3f, 0.3f);
+    }
+
+    // ---- خط الأرض ----
+    glColor3f(0.3f, 0.3f, 0.3f);
+    glLineWidth(2.0f);
+    glBegin(GL_LINES);
+    glVertex2f(0, H - 30);
+    glVertex2f(W, H - 30);
+    glEnd();
+
+    // ---- HUD ----
+    drawRect(W / 2.0f, 15, W, 30, 0, 0, 0, 0.5f);
+    drawText(10, 20, "Score: " + std::to_string(score),
+        1.0f, 1.0f, 0.3f);
+    drawText(W / 2 - 50, 20, "Level: " + std::to_string(level),
+        0.3f, 1.0f, 0.8f);
+    drawText(W - 200, 20, "Best: " + std::to_string(highScore),
+        0.8f, 0.5f, 1.0f);
+    std::string livesStr = "Lives: ";
+    for (int i = 0; i < lives; i++) livesStr += "<3 ";
+    drawText(W - 100, 20, livesStr, 1.0f, 0.3f, 0.3f);
+
+    // ---- Game Over ----
+    if (gameOver) {
+        drawRect(W / 2.0f, H / 2.0f, 420, 220, 0, 0, 0, 0.8f);
+        drawText(W / 2 - 70, H / 2 - 40, "GAME OVER", 1.0f, 0.2f, 0.2f);
+        drawText(W / 2 - 90, H / 2, "Score: " + std::to_string(score),
+            1.0f, 1.0f, 0.3f);
+        drawText(W / 2 - 110, H / 2 + 40, "Press R to Restart", 0.8f, 0.8f, 0.8f);
+    }
+
+    // ---- You Win ----
+    if (won) {
+        drawRect(W / 2.0f, H / 2.0f, 420, 220, 0, 0, 0, 0.8f);
+        drawText(W / 2 - 60, H / 2 - 40, "YOU WIN!", 0.2f, 1.0f, 0.4f);
+        drawText(W / 2 - 90, H / 2, "Score: " + std::to_string(score),
+            1.0f, 1.0f, 0.3f);
+        drawText(W / 2 - 110, H / 2 + 40, "Press R for Next Level", 0.8f, 0.8f, 0.8f);
+    }
+
+    glutSwapBuffers();
+}
+
+// ================================================================
+//  دالة التحديث
+// ================================================================
+void update(int value) {
+    if (!gameOver && !won) {
+
+        // ---- تحريك اللاعب ----
+        if (keyLeft && playerX - playerW / 2 > 0)
+            playerX -= playerSpd;
+        if (keyRight && playerX + playerW / 2 < W)
+            playerX += playerSpd;
+
+        // ---- إطلاق نار اللاعب ----
+        if (shootCooldown > 0) shootCooldown--;
+
+        // ---- تحريك الأعداء ----
+        invaderTimer++;
+        if (invaderTimer >= invaderSpeed) {
+            invaderTimer = 0;
+
+            // هل وصل لحافة؟
+            bool hitWall = false;
+            for (auto& inv : invaders) {
+                if (!inv.alive) continue;
+                if ((invaderDirX > 0 && inv.x + 25 >= W - 20) ||
+                    (invaderDirX < 0 && inv.x - 25 <= 20)) {
+                    hitWall = true;
+                    break;
+                }
+            }
+
+            if (hitWall) {
+                invaderDirX = -invaderDirX;
+                for (auto& inv : invaders)
+                    if (inv.alive) inv.y += invaderMoveY;
+                // كلما اتكسر أعداء كلما بيتحركوا أسرع
+                int alive = 0;
+                for (auto& inv : invaders)
+                    if (inv.alive) alive++;
+                invaderSpeed = std::max(5, alive / 3);
+            }
+            else {
+                for (auto& inv : invaders)
+                    if (inv.alive) inv.x += invaderDirX * 5;
+            }
+
+            // لو الأعداء وصلوا لخط اللاعب
+            for (auto& inv : invaders) {
+                if (inv.alive && inv.y > H - 80) {
+                    gameOver = true;
+                    break;
+                }
+            }
+        }
+
+        // ---- إطلاق نار الأعداء ----
+        enemyShootTimer++;
+        if (enemyShootTimer >= std::max(30, 80 - level * 5)) {
+            enemyShootTimer = 0;
+            // عدو عشوائي حي يطلق رصاصة
+            std::vector<int> aliveIdx;
+            for (int i = 0; i < (int)invaders.size(); i++)
+                if (invaders[i].alive) aliveIdx.push_back(i);
+            if (!aliveIdx.empty()) {
+                int idx = aliveIdx[rand() % aliveIdx.size()];
+                bullets.push_back({
+                    invaders[idx].x, invaders[idx].y + 20,
+                    5.0f, true, false
+                    });
+            }
+        }
+
+        // ---- تحريك الرصاصات ----
+        for (auto& b : bullets) {
+            if (!b.alive) continue;
+            b.y += b.vy;
+            if (b.y < 0 || b.y > H) b.alive = false;
+        }
+
+        // ---- رصاصة اللاعب تضرب عدو ----
+        for (auto& bullet : bullets) {
+            if (!bullet.alive || !bullet.isPlayer) continue;
+            for (auto& inv : invaders) {
+                if (!inv.alive) continue;
+                float dx = fabsf(bullet.x - inv.x);
+                float dy = fabsf(bullet.y - inv.y);
+                if (dx < 22 && dy < 20) {
+                    inv.alive = false;
+                    bullet.alive = false;
+                    score += (inv.type == 0) ? 30 :
+                        (inv.type == 1) ? 20 : 10;
+                    if (score > highScore) highScore = score;
+                    break;
+                }
+            }
+        }
+
+        // ---- رصاصة العدو تضرب اللاعب ----
+        for (auto& bullet : bullets) {
+            if (!bullet.alive || bullet.isPlayer) continue;
+            float dx = fabsf(bullet.x - playerX);
+            float dy = fabsf(bullet.y - playerY);
+            if (dx < playerW / 2 && dy < playerH / 2) {
+                bullet.alive = false;
+                lives--;
+                if (lives <= 0) gameOver = true;
+            }
+        }
+
+        // ---- الرصاصات تضرب الحواجز ----
+        for (auto& bullet : bullets) {
+            if (!bullet.alive) continue;
+            for (auto& bar : barriers) {
+                if (bar.health <= 0) continue;
+                float dx = fabsf(bullet.x - bar.x);
+                float dy = fabsf(bullet.y - bar.y);
+                if (dx < 8 && dy < 8) {
+                    bullet.alive = false;
+                    bar.health--;
+                    break;
+                }
+            }
+        }
+
+        // ---- حذف الرصاصات الميتة ----
+        bullets.erase(
+            std::remove_if(bullets.begin(), bullets.end(),
+                [](const Bullet& b) { return !b.alive; }),
+            bullets.end()
+        );
+
+        // ---- هل كل الأعداء اتقتلوا؟ ----
+        bool allDead = true;
+        for (auto& inv : invaders)
+            if (inv.alive) { allDead = false; break; }
+        if (allDead) won = true;
+    }
+
+    glutPostRedisplay();
+    glutTimerFunc(16, update, 0);
+}
+
+// ================================================================
+//  Keyboard
+// ================================================================
+void keyboard(unsigned char key, int x, int y) {
+    // إطلاق نار
+    if (key == ' ' && !gameOver && !won && shootCooldown == 0) {
+        bullets.push_back({
+            playerX, playerY - playerH / 2.0f,
+            -10.0f, true, true
+            });
+        shootCooldown = 15;
+    }
+
+    // إعادة اللعبة
+    if ((key == 'r' || key == 'R')) {
+        if (gameOver) {
+            score = 0;
+            lives = 3;
+            level = 1;
+            gameOver = false;
+            won = false;
+            playerX = W / 2.0f;
+            bullets.clear();
+            initInvaders();
+            initBarriers();
+        }
+        else if (won) {
+            level++;
+            won = false;
+            playerX = W / 2.0f;
+            bullets.clear();
+            initInvaders();
+            initBarriers();
+        }
+    }
+
+    if (key == 27) exit(0);
+}
+
+void keyboardUp(unsigned char key, int x, int y) {}
+
+void specialKeys(int key, int x, int y) {
+    if (key == GLUT_KEY_LEFT)  keyLeft = true;
+    if (key == GLUT_KEY_RIGHT) keyRight = true;
+}
+
+void specialKeysUp(int key, int x, int y) {
+    if (key == GLUT_KEY_LEFT)  keyLeft = false;
+    if (key == GLUT_KEY_RIGHT) keyRight = false;
+}
+
+// ================================================================
+//  Main
+// ================================================================
+int main(int argc, char** argv) {
+    srand((unsigned)time(0));
+
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
+    glutInitWindowSize(W, H);
+    glutInitWindowPosition(300, 50);
+    glutCreateWindow("Space Invaders - OpenGL");
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, W, H, 0, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    initInvaders();
+    initBarriers();
+
+    glutDisplayFunc(display);
+    glutTimerFunc(16, update, 0);
+    glutKeyboardFunc(keyboard);
+    glutKeyboardUpFunc(keyboardUp);
+    glutSpecialFunc(specialKeys);
+    glutSpecialUpFunc(specialKeysUp);
+
+    glutMainLoop();
+    return 0;
+}
+#pragma endregion
 
 
 
